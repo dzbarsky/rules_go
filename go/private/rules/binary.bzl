@@ -37,6 +37,7 @@ load(
     "//go/private:providers.bzl",
     "GoLibrary",
     "GoSDK",
+    "GoSource",
 )
 load(
     "//go/private/rules:transition.bzl",
@@ -93,6 +94,24 @@ def new_cc_import(
             ]),
         ),
     )
+
+def _go_cc_aspect_impl(target, ctx):
+    if GoSource not in target:
+        return []
+
+    deps = (
+        getattr(ctx.rule.attr, "cdeps", []) +
+        getattr(ctx.rule.attr, "deps", []) +
+        getattr(ctx.rule.attr, "embed", [])
+    )
+    return [
+        cc_common.merge_cc_infos(cc_infos = [dep[CcInfo] for dep in deps]),
+    ]
+
+_go_cc_aspect = aspect(
+    implementation = _go_cc_aspect_impl,
+    attr_aspects = ["cdeps", "deps", "embed"],
+)
 
 def _go_binary_impl(ctx):
     """go_binary_impl emits actions for compiling and linking a go executable."""
@@ -179,10 +198,11 @@ def _go_binary_impl(ctx):
         elif go.mode.link == LINKMODE_C_ARCHIVE:
             cc_import_kwargs["static_library"] = executable
             cc_import_kwargs["alwayslink"] = True
-        ccinfo = new_cc_import(go, **cc_import_kwargs)
-        ccinfo = cc_common.merge_cc_infos(
-            cc_infos = [ccinfo, source.cc_info],
-        )
+
+        cc_infos = [new_cc_import(go, **cc_import_kwargs)]
+        cc_infos.extend([dep[CcInfo] for dep in ctx.attr.cdeps + ctx.attr.deps + ctx.attr.embed if CcInfo in dep])
+
+        ccinfo = cc_common.merge_cc_infos(cc_infos = cc_infos)
         providers.append(ccinfo)
 
     return providers
@@ -211,6 +231,7 @@ _go_binary_kwargs = {
         ),
         "deps": attr.label_list(
             providers = [GoLibrary],
+            aspects = [_go_cc_aspect],
             doc = """List of Go libraries this package imports directly.
             These may be `go_library` rules or compatible rules with the [GoLibrary] provider.
             """,
@@ -218,6 +239,7 @@ _go_binary_kwargs = {
         ),
         "embed": attr.label_list(
             providers = [GoLibrary],
+            aspects = [_go_cc_aspect],
             doc = """List of Go libraries whose sources should be compiled together with this
             binary's sources. Labels listed here must name `go_library`,
             `go_proto_library`, or other compatible targets with the [GoLibrary] and

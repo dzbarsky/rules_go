@@ -25,7 +25,6 @@ load(
     "EXPORT_PATH",
     "GoArchive",
     "GoLibrary",
-    "get_archive",
 )
 load(
     "//go/private/rules:transition.bzl",
@@ -47,9 +46,8 @@ def _nogo_impl(ctx):
     if ctx.attr.debug:
         nogo_args.add("-debug")
     nogo_inputs = []
-    analyzer_archives = [get_archive(dep) for dep in ctx.attr.deps]
-    analyzer_importpaths = [archive.data.importpath for archive in analyzer_archives]
-    nogo_args.add_all(analyzer_importpaths, before_each = "-analyzer_importpath")
+    for dep in ctx.attr.deps:
+        nogo_args.add("-analyzer_importpath", dep[GoArchive].data.importpath)
     if ctx.file.config:
         nogo_args.add("-config", ctx.file.config)
         nogo_inputs.append(ctx.file.config)
@@ -76,7 +74,7 @@ def _nogo_impl(ctx):
     nogo_source = go.library_to_source(go, struct(
         srcs = [struct(files = [nogo_main])],
         embed = [ctx.attr._nogo_srcs],
-        deps = analyzer_archives,
+        deps = ctx.attr.deps,
     ), nogo_library, False)
     _, executable, runfiles = go.binary(
         go,

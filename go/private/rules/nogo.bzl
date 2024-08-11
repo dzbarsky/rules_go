@@ -46,8 +46,9 @@ def _nogo_impl(ctx):
     if ctx.attr.debug:
         nogo_args.add("-debug")
     nogo_inputs = []
-    for dep in ctx.attr.deps:
-        nogo_args.add("-analyzer_importpath", dep[GoArchive].data.importpath)
+    analyzer_archives = [dep[GoArchive] for dep in ctx.attr.deps]
+    analyzer_importpaths = [archive.data.importpath for archive in analyzer_archives]
+    nogo_args.add_all(analyzer_importpaths, before_each = "-analyzer_importpath")
     if ctx.file.config:
         nogo_args.add("-config", ctx.file.config)
         nogo_inputs.append(ctx.file.config)
@@ -74,7 +75,7 @@ def _nogo_impl(ctx):
     nogo_source = go.library_to_source(go, struct(
         srcs = [struct(files = [nogo_main])],
         embed = [ctx.attr._nogo_srcs],
-        deps = ctx.attr.deps,
+        deps = analyzer_archives,
     ), nogo_library, False)
     _, executable, runfiles = go.binary(
         go,

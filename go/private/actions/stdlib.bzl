@@ -50,7 +50,7 @@ def _should_use_sdk_stdlib(go):
     if version and version[0] <= 1 and version[1] <= 19 and go.sdk.experiments:
         # The precompiled stdlib shipped with 1.19 or below doesn't have experiments
         return False
-    return (go.sdk.libs.to_list() and  # go.sdk.libs is non-empty if sdk ships with precompiled .a files
+    return (go.sdk.libs and  # go.sdk.libs is non-empty if sdk ships with precompiled .a files
             go.mode.goos == go.sdk.goos and
             go.mode.goarch == go.sdk.goarch and
             not go.mode.race and  # TODO(jayconrod): use precompiled race

@@ -73,8 +73,10 @@ def _gomock_source_impl(ctx):
             needed_files.append(aux)
         args += ["-aux_files", ",".join(aux_files)]
 
+    sdk = go_ctx.sdk
+
     inputs_direct = needed_files + [source]
-    inputs_transitive = [go_ctx.sdk.tools, go_ctx.sdk.headers, go_ctx.sdk.srcs]
+    inputs_transitive = [sdk.tools, sdk.headers, sdk.srcs]
 
     # We can use the go binary from the stdlib for most of the environment
     # variables, but our GOPATH is specific to the library target we were given.
@@ -83,7 +85,7 @@ def _gomock_source_impl(ctx):
         inputs = depset(inputs_direct, transitive = inputs_transitive),
         tools = [
             ctx.file.mockgen_tool,
-            go_ctx.go,
+            sdk.go,
         ],
         toolchain = GO_TOOLCHAIN_LABEL,
         command = """
@@ -92,7 +94,7 @@ def _gomock_source_impl(ctx):
             {cmd} {args} > {out}
         """.format(
             gopath = gopath,
-            goroot = go_ctx.sdk.root_file.dirname,
+            goroot = sdk.root_file.dirname,
             cmd = "$(pwd)/" + ctx.file.mockgen_tool.path,
             args = " ".join(args),
             out = ctx.outputs.out.path,

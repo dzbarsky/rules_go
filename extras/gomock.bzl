@@ -32,7 +32,7 @@ _MOCKGEN_TOOL = Label("//extras/gomock:mockgen")
 _MOCKGEN_MODEL_LIB = Label("//extras/gomock:mockgen_model")
 
 def _gomock_source_impl(ctx):
-    go_ctx = go_context(ctx)
+    go = go_context(ctx, include_deprecated_properties = False)
 
     # In Source mode, it's not necessary to pass through a library, as the only thing we use it for is setting up
     # the relative file locations. Forcing users to pass a library makes it difficult in the case where a mock should
@@ -73,7 +73,7 @@ def _gomock_source_impl(ctx):
             needed_files.append(aux)
         args += ["-aux_files", ",".join(aux_files)]
 
-    sdk = go_ctx.sdk
+    sdk = go.sdk
 
     inputs_direct = needed_files + [source]
     inputs_transitive = [sdk.tools, sdk.headers, sdk.srcs]

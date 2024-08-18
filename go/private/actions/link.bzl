@@ -106,8 +106,7 @@ def emit_link(
     if go.mode.link == LINKMODE_PLUGIN:
         tool_args.add("-pluginpath", archive.data.importpath)
 
-    # Use preorder traversal so that the test archives override the transitive ones if they have the same importmap.
-    arcs = depset(test_archives, transitive = [d.transitive for d in archive.direct], order = "preorder")
+    arcs = depset(test_archives, transitive = [d.transitive for d in archive.direct])
     builder_args.add_all(arcs, before_each = "-arc", map_each = _format_archive)
 
     if (go.coverage_enabled and go.coverdata):

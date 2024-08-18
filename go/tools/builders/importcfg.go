@@ -177,12 +177,7 @@ func buildImportcfgFileForLink(archives []archive, stdPackageListPath, installSu
 	if err := scanner.Err(); err != nil {
 		return "", err
 	}
-	depsSeen := map[string]string{}
 	for _, arc := range archives {
-		if _, ok := depsSeen[arc.packagePath]; ok {
-			return "", fmt.Errorf("internal error: package %s provided multiple times. This should have been detected during analysis.", arc.packagePath)
-		}
-		depsSeen[arc.packagePath] = arc.label
 		fmt.Fprintf(buf, "packagefile %s=%s\n", arc.packagePath, arc.file)
 	}
 	f, err := ioutil.TempFile(dir, "importcfg")

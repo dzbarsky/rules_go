@@ -19,7 +19,6 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -51,7 +50,6 @@ func link(args []string) error {
 	buildmode := flags.String("buildmode", "", "Build mode used.")
 	flags.Var(&xdefs, "X", "A string variable to replace in the linked binary (repeated).")
 	flags.Var(&stamps, "stamp", "The name of a file with stamping values.")
-	conflictErrMsg := flags.String("conflict_err", "", "Error message about conflicts to report if there's a link error.")
 	if err := flags.Parse(builderArgs); err != nil {
 		return err
 	}
@@ -59,8 +57,35 @@ func link(args []string) error {
 		return err
 	}
 
-	if *conflictErrMsg != "" {
-		return errors.New(*conflictErrMsg)
+	var dedupedArchives []archive
+	seenArchives := make(map[string]archive)
+	for _, arc := range archives {
+		seen, ok := seenArchives[arc.packagePath]
+		if !ok {
+			dedupedArchives = append(dedupedArchives, arc)
+			seenArchives[arc.packagePath] = arc
+			continue
+		}
+
+		if seen.file == arc.file {
+			// We can end up with the same archive twice if transitively depends on coverdata.
+			// See https://github.com/bazelbuild/rules_go/issues/3017 and
+			// https://github.com/bazelbuild/rules_go/pull/3032
+			continue
+		}
+
+		return fmt.Errorf(`
+package conflict error: %s: multiple copies of package passed to linker:
+    %s
+    %s
+Set "importmap" to different paths or use 'bazel cquery' to ensure only one
+package with this path is linked.`,
+			arc.packagePath,
+			// TODO(zbarsky): The labels are empty, and `importpath` contains the label.
+			// It seems the parsing is busted.
+			arc.importPath,
+			seen.importPath,
+		)
 	}
 
 	// On Windows, take the absolute path of the output file and main file.
@@ -97,7 +122,7 @@ func link(args []string) error {
 	}
 
 	// Build an importcfg file.
-	importcfgName, err := buildImportcfgFileForLink(archives, *packageList, goenv.installSuffix, filepath.Dir(*outFile))
+	importcfgName, err := buildImportcfgFileForLink(dedupedArchives, *packageList, goenv.installSuffix, filepath.Dir(*outFile))
 	if err != nil {
 		return err
 	}

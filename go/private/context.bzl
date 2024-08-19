@@ -42,7 +42,7 @@ load(
 )
 load(
     "//go/private/rules:transition.bzl",
-    "non_go_tool_transition",
+    "non_request_nogo_transition",
     "request_nogo_transition",
 )
 load(
@@ -576,7 +576,7 @@ go_context_data = rule(
         "cgo_context_data": attr.label(),
         "coverdata": attr.label(
             mandatory = True,
-            cfg = non_go_tool_transition,
+            cfg = non_request_nogo_transition,
             providers = [GoArchive],
         ),
         "go_config": attr.label(

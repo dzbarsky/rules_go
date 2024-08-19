@@ -177,7 +177,23 @@ func buildImportcfgFileForLink(archives []archive, stdPackageListPath, installSu
 	if err := scanner.Err(); err != nil {
 		return "", err
 	}
+	depsSeen := map[string]string{}
 	for _, arc := range archives {
+		if prevLabel, ok := depsSeen[arc.packagePath]; ok {
+			return "", fmt.Errorf(`
+package conflict error: %s: multiple copies of package passed to linker:
+    %s
+    %s
+Set "importmap" to different paths or use 'bazel cquery' to ensure only one
+package with this path is linked.`,
+				arc.packagePath,
+				arc.importPath,
+				prevLabel)
+		}
+		// TODO(zbarsky): The labels are empty, and `importPath` contains the label.
+		// The parsing is incorrect because arrchiveMultiFlag assuming the formatting from
+		// `compilepkg.bzl` but `_format_archive` in `link.bzl` formats differently.
+		depsSeen[arc.packagePath] = arc.importPath
 		fmt.Fprintf(buf, "packagefile %s=%s\n", arc.packagePath, arc.file)
 	}
 	f, err := ioutil.TempFile(dir, "importcfg")

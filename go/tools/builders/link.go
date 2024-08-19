@@ -57,42 +57,6 @@ func link(args []string) error {
 		return err
 	}
 
-	var dedupedArchives []archive
-	seenArchives := make(map[string]archive)
-	for _, arc := range archives {
-		seen, ok := seenArchives[arc.packagePath]
-		if !ok {
-			dedupedArchives = append(dedupedArchives, arc)
-			seenArchives[arc.packagePath] = arc
-			continue
-		}
-
-		if arc.packagePath == "github.com/bazelbuild/rules_go/go/tools/coverdata" {
-			// We can end up with this archive twice if the test transitively depends on coverdata.
-			// See https://github.com/bazelbuild/rules_go/issues/3017 and
-			// https://github.com/bazelbuild/rules_go/pull/3032
-			// Note that `arc.file` != `seen.file`:
-			//   _main/bazel-out/darwin_arm64-fastbuild-ST-92a08095f520/bin/external/io_bazel_rules_go/go/tools/coverdata/coverdata.a
-			//   _main/bazel-out/darwin_arm64-fastbuild/bin/external/io_bazel_rules_go/go/tools/coverdata/coverdata.a
-			// Perhaps path mapping can help here?
-			continue
-		}
-
-		return fmt.Errorf(`
-package conflict error: %s: multiple copies of package passed to linker:
-    %s
-    %s
-Set "importmap" to different paths or use 'bazel cquery' to ensure only one
-package with this path is linked.`,
-			arc.packagePath,
-			// TODO(zbarsky): The labels are empty, and `importPath` contains the label.
-			// The parsing is incorrect because arrchiveMultiFlag assuming the formatting from
-			// `compilepkg.bzl` but `_format_archive` in `link.bzl` formats differently.
-			arc.importPath,
-			seen.importPath,
-		)
-	}
-
 	// On Windows, take the absolute path of the output file and main file.
 	// This is needed on Windows because the relative path is frequently too long.
 	// os.Open on Windows converts absolute paths to some other path format with
@@ -127,7 +91,7 @@ package with this path is linked.`,
 	}
 
 	// Build an importcfg file.
-	importcfgName, err := buildImportcfgFileForLink(dedupedArchives, *packageList, goenv.installSuffix, filepath.Dir(*outFile))
+	importcfgName, err := buildImportcfgFileForLink(archives, *packageList, goenv.installSuffix, filepath.Dir(*outFile))
 	if err != nil {
 		return err
 	}

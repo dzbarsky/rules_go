@@ -106,13 +106,11 @@ def emit_link(
     if go.mode.link == LINKMODE_PLUGIN:
         tool_args.add("-pluginpath", archive.data.importpath)
 
+    if go.coverage_enabled and go.coverdata:
+        test_archives = list(test_archives) + [go.coverdata.data]
+
     arcs = depset(test_archives, transitive = [d.transitive for d in archive.direct])
     builder_args.add_all(arcs, before_each = "-arc", map_each = _format_archive)
-
-    if (go.coverage_enabled and go.coverdata):
-        # The linker knows to exclude the coverdata archive if it's already included in `arcs`.
-        builder_args.add("-arc", _format_archive(go.coverdata.data))
-
     builder_args.add("-package_list", go.sdk.package_list)
 
     # Build a list of rpaths for dynamic libraries we need to find.

@@ -36,7 +36,7 @@ func compilePkg(args []string) error {
 
 	fs := flag.NewFlagSet("GoCompilePkg", flag.ExitOnError)
 	goenv := envFlags(fs)
-	var unfilteredSrcs, coverSrcs, embedSrcs, embedLookupDirs, embedRoots, recompileInternalDeps multiFlag
+	var unfilteredSrcs, coverSrcs, embedSrcs, embedLookupDirs, embedRoots multiFlag
 	var deps archiveMultiFlag
 	var importPath, packagePath, packageListPath, coverMode string
 	var outLinkobjPath, outInterfacePath, cgoExportHPath, cgoGoSrcsPath string
@@ -68,7 +68,6 @@ func compilePkg(args []string) error {
 	fs.StringVar(&cgoGoSrcsPath, "cgo_go_srcs", "", "The directory to emit cgo-generated Go sources for nogo consumption to")
 	fs.StringVar(&testFilter, "testfilter", "off", "Controls test package filtering")
 	fs.StringVar(&coverFormat, "cover_format", "", "Emit source file paths in coverage instrumentation suitable for the specified coverage format")
-	fs.Var(&recompileInternalDeps, "recompile_internal_deps", "The import path of the direct dependencies that needs to be recompiled.")
 	fs.StringVar(&pgoprofile, "pgoprofile", "", "The pprof profile to consider for profile guided optimization.")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -130,7 +129,6 @@ func compilePkg(args []string) error {
 		cgoExportHPath,
 		cgoGoSrcsPath,
 		coverFormat,
-		recompileInternalDeps,
 		pgoprofile)
 }
 
@@ -161,7 +159,6 @@ func compileArchive(
 	cgoExportHPath string,
 	cgoGoSrcsForNogoPath string,
 	coverFormat string,
-	recompileInternalDeps []string,
 	pgoprofile string,
 ) error {
 	workDir, cleanup, err := goenv.workDir()
@@ -331,7 +328,13 @@ func compileArchive(
 		gcFlags = append(gcFlags, createTrimPath(gcFlags, "."))
 	}
 
+<<<<<<< HEAD
 	importcfgPath, err := checkImportsAndBuildCfg(goenv, importPath, srcs, deps, packageListPath, recompileInternalDeps, compilingWithCgo, coverMode, workDir)
+=======
+	// Check that the filtered sources don't import anything outside of
+	// the standard library and the direct dependencies.
+	imports, err := checkImports(srcs.goSrcs, deps, packageListPath, importPath)
+>>>>>>> baec8427 (No recompile deps)
 	if err != nil {
 		return err
 	}
@@ -496,6 +499,7 @@ func compileGo(goenv *env, srcs []string, packagePath, importcfgPath, embedcfgPa
 	args = append(args, "--")
 	args = append(args, srcs...)
 	absArgs(args, []string{"-I", "-o", "-trimpath", "-importcfg"})
+	fmt.Println(args)
 	return goenv.runCommand(args)
 }
 
@@ -503,6 +507,7 @@ func appendToArchive(goenv *env, outPath string, objFiles []string) error {
 	// Use abs to work around long path issues on Windows.
 	args := goenv.goTool("pack", "r", abs(outPath))
 	args = append(args, objFiles...)
+	fmt.Println(args)
 	return goenv.runCommand(args)
 }
 

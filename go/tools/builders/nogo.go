@@ -20,7 +20,7 @@ func nogo(args []string) error {
 
 	fs := flag.NewFlagSet("GoNogo", flag.ExitOnError)
 	goenv := envFlags(fs)
-	var unfilteredSrcs, ignoreSrcs, recompileInternalDeps multiFlag
+	var unfilteredSrcs, ignoreSrcs multiFlag
 	var deps, facts archiveMultiFlag
 	var importPath, packagePath, nogoPath, packageListPath string
 	var testFilter string
@@ -33,7 +33,6 @@ func nogo(args []string) error {
 	fs.StringVar(&importPath, "importpath", "", "The import path of the package being compiled. Not passed to the compiler, but may be displayed in debug data.")
 	fs.StringVar(&packagePath, "p", "", "The package path (importmap) of the package being compiled")
 	fs.StringVar(&packageListPath, "package_list", "", "The file containing the list of standard library packages")
-	fs.Var(&recompileInternalDeps, "recompile_internal_deps", "The import path of the direct dependencies that needs to be recompiled.")
 	fs.StringVar(&coverMode, "cover_mode", "", "The coverage mode to use. Empty if coverage instrumentation should not be added.")
 	fs.StringVar(&testFilter, "testfilter", "off", "Controls test package filtering")
 	fs.StringVar(&nogoPath, "nogo", "", "The nogo binary")
@@ -77,7 +76,7 @@ func nogo(args []string) error {
 	defer cleanup()
 
 	compilingWithCgo := os.Getenv("CGO_ENABLED") == "1" && haveCgo
-	importcfgPath, err := checkImportsAndBuildCfg(goenv, importPath, srcs, deps, packageListPath, recompileInternalDeps, compilingWithCgo, coverMode, workDir)
+	importcfgPath, err := checkImportsAndBuildCfg(goenv, importPath, srcs, deps, packageListPath, compilingWithCgo, coverMode, workDir)
 	if err != nil {
 		return err
 	}
@@ -148,4 +147,3 @@ func runNogo(workDir string, nogoPath string, srcs, ignores []string, facts []ar
 	}
 	return nil
 }
-

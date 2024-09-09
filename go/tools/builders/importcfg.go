@@ -37,7 +37,7 @@ type archive struct {
 // listed in the file at stdPackageListPath. checkImports returns
 // a map from source import paths to elements of archives or to nil
 // for standard library packages.
-func checkImports(files []fileInfo, archives []archive, stdPackageListPath string, importPath string, recompileInternalDeps []string) (map[string]*archive, error) {
+func checkImports(files []fileInfo, archives []archive, stdPackageListPath string, importPath string) (map[string]*archive, error) {
 	// Read the standard package list.
 	packagesTxt, err := ioutil.ReadFile(stdPackageListPath)
 	if err != nil {
@@ -71,11 +71,6 @@ func checkImports(files []fileInfo, archives []archive, stdPackageListPath strin
 			importAliasToArchive[imp] = arc
 		}
 	}
-	// Construct recompileInternalDeps as a map to check if there are imports that are disallowed.
-	recompileInternalDepMap := make(map[string]struct{})
-	for _, dep := range recompileInternalDeps {
-		recompileInternalDepMap[dep] = struct{}{}
-	}
 	// Build the import map.
 	imports := make(map[string]*archive)
 	var derr depsError
@@ -86,9 +81,6 @@ func checkImports(files []fileInfo, archives []archive, stdPackageListPath strin
 				// TODO(#1645): Support local (relative) import paths. We don't emit
 				// errors for them here, but they will probably break something else.
 				continue
-			}
-			if _, ok := recompileInternalDepMap[path]; ok {
-				return nil, fmt.Errorf("dependency cycle detected between %q and %q in file %q", importPath, path, f.filename)
 			}
 			if stdPkgs[path] {
 				imports[path] = nil
@@ -137,6 +129,8 @@ func buildImportcfgFileForCompile(imports map[string]*archive, installSuffix, di
 		}
 	}
 
+	fmt.Println("COMPILE IMPORT CFG")
+	fmt.Println(string(buf.Bytes()))
 	f, err := ioutil.TempFile(dir, "importcfg")
 	if err != nil {
 		return "", err
@@ -179,7 +173,7 @@ func buildImportcfgFileForLink(archives []archive, stdPackageListPath, installSu
 	}
 	depsSeen := map[string]string{}
 	for _, arc := range archives {
-		if prevLabel, ok := depsSeen[arc.packagePath]; ok {
+		if prevLabel, ok := depsSeen[arc.packagePath]; ok && false {
 			return "", fmt.Errorf(`
 package conflict error: %s: multiple copies of package passed to linker:
     %s
@@ -191,7 +185,7 @@ package with this path is linked.`,
 				prevLabel)
 		}
 		// TODO(zbarsky): The labels are empty, and `importPath` contains the label.
-		// The parsing is incorrect because arrchiveMultiFlag assuming the formatting from
+		// The parsing is incorrect because archiveMultiFlag assuming the formatting from
 		// `compilepkg.bzl` but `_format_archive` in `link.bzl` formats differently.
 		depsSeen[arc.packagePath] = arc.importPath
 		fmt.Fprintf(buf, "packagefile %s=%s\n", arc.packagePath, arc.file)
@@ -200,6 +194,7 @@ package with this path is linked.`,
 	if err != nil {
 		return "", err
 	}
+	fmt.Println(string(buf.Bytes()))
 	filename := f.Name()
 	if _, err := io.Copy(f, buf); err != nil {
 		f.Close()

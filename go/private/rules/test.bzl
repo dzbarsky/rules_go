@@ -69,6 +69,10 @@ def _go_test_impl(ctx):
 
     validation_outputs = []
 
+    lib_library = go.new_library(go, testfilter = "lib_only")
+    lib_source = go.library_to_source(go, ctx.attr, lib_library, ctx.coverage_instrumented())
+    lib_archive = go.archive(go, lib_source)
+
     # Compile the library to test with internal white box tests
     internal_library = go.new_library(go, testfilter = "exclude")
     internal_source = go.library_to_source(go, ctx.attr, internal_library, ctx.coverage_instrumented())
@@ -76,6 +80,8 @@ def _go_test_impl(ctx):
     if internal_archive.data._validation_output:
         validation_outputs.append(internal_archive.data._validation_output)
     go_srcs = [src for src in internal_source.srcs if src.extension == "go"]
+    print(internal_library)
+    print(go_srcs)
 
     # Compile the library with the external black box tests
     external_library = go.new_library(
@@ -88,10 +94,9 @@ def _go_test_impl(ctx):
         srcs = [struct(files = go_srcs)],
         data = ctx.attr.data,
         embedsrcs = [struct(files = internal_source.embedsrcs)],
-        deps = internal_archive.direct + [internal_archive],
+        deps = lib_archive.direct + [lib_archive],
         x_defs = ctx.attr.x_defs,
     ), external_library, ctx.coverage_instrumented())
-    external_source, internal_archive = _recompile_external_deps(go, external_source, internal_archive, [t.label for t in ctx.attr.embed])
     external_archive = go.archive(go, external_source, is_external_pkg = True)
     if external_archive.data._validation_output:
         validation_outputs.append(external_archive.data._validation_output)
@@ -120,13 +125,13 @@ def _go_test_impl(ctx):
         # the l is the alias for the package under test, the l_test must be the
         # same with the test suffix
         "-import",
-        "l=" + internal_source.library.importpath,
+        "l=" + internal_library.importpath,
     )
     arguments.add(
         "-import",
-        "l_test=" + external_source.library.importpath,
+        "l_test=" + external_library.importpath,
     )
-    arguments.add("-pkgname", internal_source.library.importpath)
+    arguments.add("-pkgname", lib_library.importpath)
     arguments.add_all(go_srcs, before_each = "-src", format_each = "l=%s")
 
     ctx.actions.run(
@@ -153,16 +158,24 @@ def _go_test_impl(ctx):
 
     # Now compile the test binary itself
     test_library = GoLibrary(
-        name = go.label.name + "~testmain",
+        name = go.label.name + ".test",
         label = go.label,
-        importpath = "testmain",
-        importmap = "testmain",
+        importpath = go.importpath + ".test",
+        importmap = go.importpath + ".test",
         importpath_aliases = (),
         pathtype = INFERRED_PATH,
         is_main = True,
         resolve = None,
     )
-    test_deps = external_archive.direct + [external_archive] + ctx.attr._testmain_additional_deps
+    test_deps = [internal_archive, external_archive] + external_archive.direct + internal_archive.direct
+    test_deps = [internal_archive] + [
+        d
+        for d in test_deps
+        if d.source.library.importpath != internal_library.importpath
+    ] + ctx.attr._testmain_additional_deps
+
+    #for dep in test_deps:
+    #    print(dep.source.library.importpath, dep.source.srcs, dep.source.library.testfilter)
     if go.coverage_enabled:
         test_deps.append(go.coverdata)
     test_source = go.library_to_source(go, struct(
@@ -495,233 +508,3 @@ _go_test_kwargs = {
 }
 
 go_test = rule(**_go_test_kwargs)
-
-def _recompile_external_deps(go, external_source, internal_archive, library_labels):
-    """Recompiles some archives in order to split internal and external tests.
-
-    go_test, like 'go test', splits tests into two separate archives: an
-    internal archive ('package foo') and an external archive
-    ('package foo_test'). The library under test is embedded into the internal
-    archive. The external archive may import it and may depend on symbols
-    defined in the internal test files.
-
-    To avoid conflicts, the library under test must not be linked into the test
-    binary, since the internal test archive embeds the same sources.
-    Libraries imported by the external test that transitively import the
-    library under test must be recompiled too, or the linker will complain that
-    export data they were compiled with doesn't match the export data they
-    are linked with.
-
-    This function identifies which archives may need to be recompiled, then
-    declares new output files and actions to recompile them. This is an
-    unfortunately an expensive process requiring O(V+E) time and space in the
-    size of the test's dependency graph for each test.
-
-    Args:
-        go: go object returned by go_context.
-        external_source: GoSource for the external archive.
-        internal_archive: GoArchive for the internal archive.
-        library_labels: labels for embedded libraries under test.
-
-    Returns:
-        external_soruce: recompiled GoSource for the external archive. If no
-            recompilation is needed, the original GoSource is returned.
-        internal_archive: recompiled GoArchive for the internal archive. If no
-            recompilation is needed, the original GoSource is returned.
-    """
-
-    # If no libraries are embedded in the internal archive, then nothing needs
-    # to be recompiled.
-    if not library_labels:
-        return external_source, internal_archive
-
-    # Build a map from labels to GoArchiveData.
-    # If none of the librares embedded in the internal archive are in the
-    # dependency graph, then nothing needs to be recompiled.
-    arc_data_list = depset(transitive = [archive.transitive for archive in external_source.deps]).to_list()
-    label_to_arc_data = {a.label: a for a in arc_data_list}
-    if all([l not in label_to_arc_data for l in library_labels]):
-        return external_source, internal_archive
-
-    # Build a depth-first post-order list of dependencies starting with the
-    # external archive. Each archive appears after its dependencies and before
-    # its dependents.
-    #
-    # This is tricky because Starlark doesn't support recursion or while loops.
-    # We simulate a while loop by iterating over a list of 2N elements where
-    # N is the number of archives. Each archive is pushed onto the stack
-    # twice: once before its dependencies are pushed, and once after.
-
-    # dep_list is the post-order list of dependencies we're building.
-    dep_list = []
-
-    # stack is a stack of targets to process. We're done when it's empty.
-    stack = [archive.data.label for archive in external_source.deps]
-
-    # deps_pushed tracks the status of each target.
-    # DEPS_UNPROCESSED means the target is on the stack, but its dependencies
-    # are not.
-    # Non-negative integers are the number of dependencies on the stack that
-    # still need to be processed.
-    # A target is on the stack if its status is DEPS_UNPROCESSED or 0.
-    DEPS_UNPROCESSED = -1
-    deps_pushed = {l: DEPS_UNPROCESSED for l in stack}
-
-    # dependents maps labels to lists of known dependents. When a target is
-    # processed, its dependents' deps_pushed count is deprecated.
-    dependents = {l: [] for l in stack}
-
-    # step is a list to iterate over to simulate a while loop. i tracks
-    # iterations.
-    step = [None] * (2 * len(arc_data_list))
-    i = 0
-    for _ in step:
-        if len(stack) == 0:
-            break
-        i += 1
-
-        label = stack.pop()
-        if deps_pushed[label] == 0:
-            # All deps have been added to dep_list. Append this target to the
-            # list. If a dependent is not waiting for anything else, push
-            # it back onto the stack.
-            dep_list.append(label)
-            for p in dependents.get(label, []):
-                deps_pushed[p] -= 1
-                if deps_pushed[p] == 0:
-                    stack.append(p)
-            continue
-
-        # deps_pushed[label] == None, indicating we don't know whether this
-        # targets dependencies have been processed. Other targets processed
-        # earlier may depend on them.
-        deps_pushed[label] = 0
-        arc_data = label_to_arc_data[label]
-        for c in arc_data._dep_labels:
-            if c not in deps_pushed:
-                # Dependency not seen yet; push it.
-                stack.append(c)
-                deps_pushed[c] = None
-                deps_pushed[label] += 1
-                dependents[c] = [label]
-            elif deps_pushed[c] != 0:
-                # Dependency pushed, not processed; wait for it.
-                deps_pushed[label] += 1
-                dependents[c].append(label)
-        if deps_pushed[label] == 0:
-            # No dependencies to wait for; push self.
-            stack.append(label)
-    if i != len(step):
-        fail("assertion failed: iterated %d times instead of %d" % (i, len(step)))
-
-    # Determine which dependencies need to be recompiled because they depend
-    # on embedded libraries.
-    need_recompile = {}
-    for label in dep_list:
-        arc_data = label_to_arc_data[label]
-        need_recompile[label] = any([
-            dep in library_labels or need_recompile[dep]
-            for dep in arc_data._dep_labels
-        ])
-
-    # Recompile the internal archive without dependencies that need
-    # recompilation. This breaks a cycle which occurs because the deps list
-    # is shared between the internal and external archive. The internal archive
-    # can't import anything that imports itself.
-    internal_source = internal_archive.source
-
-    internal_deps = []
-
-    # Pass internal dependencies that need to be recompiled down to the builder to check if the internal archive
-    # tries to import any of the dependencies. If there is, that means that there is a dependency cycle.
-    need_recompile_deps = []
-    for archive in internal_source.deps:
-        dep_data = archive.data
-        if not need_recompile[dep_data.label]:
-            internal_deps.append(archive)
-        else:
-            need_recompile_deps.append(dep_data.importpath)
-
-    x_defs = dict(internal_source.x_defs)
-    x_defs.update(internal_archive.x_defs)
-    attrs = structs.to_dict(internal_source)
-    attrs["deps"] = internal_deps
-    attrs["x_defs"] = x_defs
-    internal_source = GoSource(**attrs)
-    internal_archive = go.archive(go, internal_source, _recompile_suffix = ".recompileinternal", recompile_internal_deps = need_recompile_deps)
-
-    # Build a map from labels to possibly recompiled GoArchives.
-    label_to_archive = {}
-    i = 0
-    for label in dep_list:
-        i += 1
-        recompile_suffix = ".recompile%d" % i
-
-        # If this library is the internal archive, use the recompiled version.
-        if label == internal_archive.data.label:
-            label_to_archive[label] = internal_archive
-            continue
-
-        # If this is a library embedded into the internal test archive,
-        # use the internal test archive instead.
-        if label in library_labels:
-            label_to_archive[label] = internal_archive
-            continue
-
-        # Create a stub GoLibrary and GoSource from the archive data.
-        arc_data = label_to_arc_data[label]
-        library = GoLibrary(
-            name = arc_data.name,
-            label = arc_data.label,
-            importpath = arc_data.importpath,
-            importmap = arc_data.importmap,
-            importpath_aliases = arc_data.importpath_aliases,
-            pathtype = arc_data.pathtype,
-            resolve = None,
-            testfilter = None,
-            is_main = False,
-        )
-        deps = [label_to_archive[d] for d in arc_data._dep_labels]
-        source = GoSource(
-            library = library,
-            mode = go.mode,
-            srcs = as_list(arc_data.srcs),
-            cover = arc_data._cover,
-            embedsrcs = as_list(arc_data._embedsrcs),
-            x_defs = dict(arc_data._x_defs),
-            deps = deps,
-            gc_goopts = as_list(arc_data._gc_goopts),
-            runfiles = arc_data.runfiles,
-            cgo = arc_data._cgo,
-            cdeps = as_list(arc_data._cdeps),
-            cppopts = as_list(arc_data._cppopts),
-            copts = as_list(arc_data._copts),
-            cxxopts = as_list(arc_data._cxxopts),
-            clinkopts = as_list(arc_data._clinkopts),
-        )
-
-        # If this archive needs to be recompiled, use go.archive.
-        # Otherwise, create a stub GoArchive, using the original file.
-        if need_recompile[label]:
-            recompile_suffix = ".recompile%d" % i
-            archive = go.archive(go, source, _recompile_suffix = recompile_suffix)
-        else:
-            archive = GoArchive(
-                source = source,
-                data = arc_data,
-                direct = deps,
-                libs = depset(direct = [arc_data.file], transitive = [a.libs for a in deps]),
-                transitive = depset(direct = [arc_data], transitive = [a.transitive for a in deps]),
-                x_defs = source.x_defs,
-                cgo_deps = depset(transitive = [arc_data._cgo_deps] + [a.cgo_deps for a in deps]),
-                cgo_exports = depset(transitive = [a.cgo_exports for a in deps]),
-                runfiles = source.runfiles,
-                mode = go.mode,
-            )
-        label_to_archive[label] = archive
-
-    # Finally, we need to replace external_source.deps with the recompiled
-    # archives.
-    attrs = structs.to_dict(external_source)
-    attrs["deps"] = [label_to_archive[archive.data.label] for archive in external_source.deps]
-    return GoSource(**attrs), internal_archive

@@ -37,7 +37,7 @@ load(
     "cgo_configure",
 )
 
-def emit_archive(go, source = None, _recompile_suffix = "", recompile_internal_deps = None, is_external_pkg = False):
+def emit_archive(go, source = None, is_external_pkg = False):
     """See go/toolchains.rst#archive for full documentation."""
 
     if source == None:
@@ -51,8 +51,8 @@ def emit_archive(go, source = None, _recompile_suffix = "", recompile_internal_d
         pre_ext = ".internal"
     elif testfilter == "only":
         pre_ext = ".external"
-    if _recompile_suffix:
-        pre_ext += _recompile_suffix
+    elif testfilter == "lib_only":
+        pre_ext = ".lib_only"
     out_lib = go.declare_file(go, name = source.library.name, ext = pre_ext + ".a")
 
     # store export information for compiling dependent packages separately
@@ -146,7 +146,6 @@ def emit_archive(go, source = None, _recompile_suffix = "", recompile_internal_d
             gc_goopts = source.gc_goopts,
             cgo = False,
             testfilter = testfilter,
-            recompile_internal_deps = recompile_internal_deps,
             is_external_pkg = is_external_pkg,
         )
 

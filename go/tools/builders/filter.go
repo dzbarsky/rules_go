@@ -136,6 +136,14 @@ func applyTestFilter(testFilter string, srcs *archiveSrcs) error {
 			}
 		}
 		srcs.goSrcs = libSrcs
+	case "lib_only":
+		libSrcs := make([]fileInfo, 0, len(srcs.goSrcs))
+		for _, f := range srcs.goSrcs {
+			if !strings.HasSuffix(f.filename, "_test.go") {
+				libSrcs = append(libSrcs, f)
+			}
+		}
+		srcs.goSrcs = libSrcs
 	default:
 		return fmt.Errorf("invalid test filter %q", testFilter)
 	}

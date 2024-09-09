@@ -142,6 +142,7 @@ def _build_stdlib(go):
 
     sdk = go.sdk
     inputs_direct = [sdk.go, sdk.package_list, sdk.root_file]
+    print(sdk.srcs)
     inputs_transitive = [sdk.headers, sdk.srcs, sdk.tools, go.cc_toolchain_files]
 
     if go.mode.pgoprofile:

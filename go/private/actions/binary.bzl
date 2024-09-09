@@ -41,6 +41,7 @@ def emit_binary(
         fail("either name or executable must be set")
 
     archive = go.archive(go, source)
+    print("binary", archive.data.importpath)
     if not executable:
         if go.mode.linkmode == LINKMODE_C_SHARED:
             name = "lib" + name  # shared libraries need a "lib" prefix in their name

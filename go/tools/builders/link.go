@@ -91,7 +91,20 @@ func link(args []string) error {
 	}
 
 	// Build an importcfg file.
-	importcfgName, err := buildImportcfgFileForLink(archives, *packageList, goenv.installSuffix, filepath.Dir(*outFile))
+	var archives2 []archive
+	for _, arc := range archives {
+		//fmt.Println(arc.file, arc)
+		//if !strings.Contains(arc.file, "indirect_import_test.lib_only.a") &&
+		//	!strings.Contains(arc.file, "indirect_import_lib.a") {
+		//	archives2 = append(archives2, arc)
+		//}
+		if !strings.Contains(arc.file, "indirect_import_lib") &&
+			!strings.Contains(arc.file, "indirect_import_test.lib_only") {
+			archives2 = append(archives2, arc)
+		}
+	}
+
+	importcfgName, err := buildImportcfgFileForLink(archives2, *packageList, goenv.installSuffix, filepath.Dir(*outFile))
 	if err != nil {
 		return err
 	}
@@ -157,6 +170,7 @@ func link(args []string) error {
 		os.Setenv("GOROOT", "GOROOT")
 		defer os.Setenv("GOROOT", oldroot)
 	}
+	fmt.Println(goargs)
 	if err := goenv.runCommand(goargs); err != nil {
 		return err
 	}

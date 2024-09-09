@@ -23,7 +23,24 @@ filegroup(
 
 filegroup(
     name = "srcs",
-    srcs = glob(["src/**"]),
+    srcs = glob(
+        ["src/**"],
+        exclude = [
+            "src/**/testdata/**",
+            "src/cmd/cgo/internal/cgotest/**",
+            "src/cmd/cgo/internal/test/**",
+            "src/cmd/cgo/internal/test*/**",
+            "src/cmd/compile/internal/test/**",
+            "src/cmd/go/internal/imports/testdata/**",
+            "src/cmd/go/internal/modfetch/zip_sum_test/**",
+            "src/cmd/go/internal/script/scripttest/**",
+            "src/cmd/go/internal/vcweb/vcstest/**",
+            "src/log/slog/internal/benchmarks/**",
+            "src/reflect/internal/example*/**",
+            "src/runtime/internal/startlinetest/**",
+            "src/runtime/internal/wasitest/**",
+        ],
+    ),
 )
 
 filegroup(
